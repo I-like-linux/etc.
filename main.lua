@@ -9,7 +9,7 @@ function love.load()
     love.window.setFullscreen(true)
 
     local mainFont = love.graphics.newFont(256)
-    love.graphics.setColor(rgb(red, green, blue))
+    love.graphics.setColor(rgb(255, 255, 255))
     love.graphics.setFont(mainFont)
 end
 
