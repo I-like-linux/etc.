@@ -1,0 +1,93 @@
+img_x = 0
+img_y = 0
+
+plr_collided_with = false
+
+--custom functions
+
+function collidehitbox()
+
+    if 
+
+
+
+end
+
+--movement controller
+
+function basic_movement_controll(img_x, img_y , interval)
+    if love.keyboard.isDown("w") then
+        img_y = img_y - interval
+    end
+
+    if love.keyboard.isDown("s") then
+        img_y = img_y + interval
+    end
+
+    if love.keyboard.isDown("a") then
+        img_x = img_x - interval
+    end
+
+    if love.keyboard.isDown("d") then
+        img_x = img_x + interval
+    end
+
+    return img_x, img_y
+
+end
+
+--other custom functions
+
+function fillscreen(fillscreenColorRed, fillscreenColorGreen, fillscreenColorBlue)
+    love.graphics.clear(fillscreenColorRed, fillscreenColorGreen, fillscreenColorBlue)
+end
+
+function window_init(fullscreenTF)
+
+    if fullscreenTF == true then
+        love.window.setFullscreen(true)
+    end
+    
+end
+
+function rgb(r, g, b)
+    return r/255, g/255, b/255
+end
+
+function exit()
+    love.event.quit()
+end
+
+
+--normal love2D stuff/the main game
+
+function love.load()
+    window_init(true)
+
+    local mainFont = love.graphics.newFont(24)
+    love.graphics.setFont(mainFont)
+
+    img = love.graphics.newImage("testimg.png")
+
+end
+
+function love.keypressed(key)
+
+    if key == "x" then
+       exit() 
+    end
+
+end
+
+--main loop
+function love.update()
+
+    img_x, img_y = basic_movement_controll(img_x, img_y, 20)
+
+end
+
+function love.draw()
+    fillscreen(rgb(20, 100, 20))
+    love.graphics.draw(img, img_x, img_y, 0, 0.2, 0.2)
+end
+ 
