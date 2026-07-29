@@ -1,0 +1,378 @@
+#!/usr/bin/python3
+
+import pygame,random,sys
+
+WINDOW_WIDTH=1920
+WINDOW_HEIGHT=1080
+FPS=60
+
+GRID_COLS=10
+GRID_ROWS=20
+BLOCK_SIZE=32
+
+PLAYFIELD_WIDTH=GRID_COLS*BLOCK_SIZE
+PLAYFIELD_HEIGHT=GRID_ROWS*BLOCK_SIZE
+
+SIDEBAR_WIDTH=480
+SIDEBAR_MARGIN=80
+SIDEBAR_INNER_PADDING=40
+
+SIDEBAR_X=WINDOW_WIDTH-SIDEBAR_WIDTH-SIDEBAR_MARGIN
+
+AVAILABLE_WIDTH=SIDEBAR_X-80
+PLAYFIELD_X=(AVAILABLE_WIDTH-PLAYFIELD_WIDTH)//2+40
+PLAYFIELD_Y=(WINDOW_HEIGHT-PLAYFIELD_HEIGHT)//2
+
+COLOR_BG=(10,12,20)
+COLOR_BG_DARK=(6,8,14)
+COLOR_PANEL=(24,28,40)
+COLOR_PANEL_DARK=(16,20,30)
+COLOR_TEXT=(235,240,255)
+COLOR_ACCENT=(90,140,255)
+COLOR_EXIT=(220,80,80)
+
+CYAN=(0,255,255)
+YELLOW=(255,255,0)
+PURPLE=(160,0,240)
+GREEN=(0,255,0)
+RED=(255,0,0)
+BLUE=(0,0,255)
+ORANGE=(255,165,0)
+
+ROTATIONS={
+    'I':[
+        [(0,1),(1,1),(2,1),(3,1)],
+        [(2,0),(2,1),(2,2),(2,3)],
+        [(0,2),(1,2),(2,2),(3,2)],
+        [(1,0),(1,1),(1,2),(1,3)],
+    ],
+    'O':[
+        [(1,0),(2,0),(1,1),(2,1)],
+        [(1,0),(2,0),(1,1),(2,1)],
+        [(1,0),(2,0),(1,1),(2,1)],
+        [(1,0),(2,0),(1,1),(2,1)],
+    ],
+    'T':[
+        [(1,0),(0,1),(1,1),(2,1)],
+        [(1,0),(1,1),(2,1),(1,2)],
+        [(0,1),(1,1),(2,1),(1,2)],
+        [(1,0),(0,1),(1,1),(1,2)],
+    ],
+    'J':[
+        [(0,0),(0,1),(1,1),(2,1)],
+        [(1,0),(2,0),(1,1),(1,2)],
+        [(0,1),(1,1),(2,1),(2,2)],
+        [(1,0),(1,1),(0,2),(1,2)],
+    ],
+    'L':[
+        [(2,0),(0,1),(1,1),(2,1)],
+        [(1,0),(1,1),(1,2),(2,2)],
+        [(0,1),(1,1),(2,1),(0,2)],
+        [(0,0),(1,0),(1,1),(1,2)],
+    ],
+    'S':[
+        [(1,0),(2,0),(0,1),(1,1)],
+        [(1,0),(1,1),(2,1),(2,2)],
+        [(1,1),(2,1),(0,2),(1,2)],
+        [(0,0),(0,1),(1,1),(1,2)],
+    ],
+    'Z':[
+        [(0,0),(1,0),(1,1),(2,1)],
+        [(2,0),(1,1),(2,1),(1,2)],
+        [(0,1),(1,1),(1,2),(2,2)],
+        [(1,0),(0,1),(1,1),(0,2)],
+    ],
+}
+
+TETROMINO_COLORS={
+    'I':CYAN,'O':YELLOW,'T':PURPLE,'S':GREEN,'Z':RED,'J':BLUE,'L':ORANGE
+}
+
+LINE_SCORES={1:40,2:100,3:300,4:1200}
+WEIGHTED_SHAPES=["I","I","O","T","S","Z","J","L"]
+
+class Piece:
+    def __init__(self,shape):
+        self.shape=shape
+        self.rot=0
+        self.blocks=[b for b in ROTATIONS[shape][0]]
+        self.color=TETROMINO_COLORS[shape]
+        self.x=GRID_COLS//2-2
+        self.y=0
+
+def create_grid():
+    return[[None for _ in range(GRID_COLS)]for _ in range(GRID_ROWS)]
+
+def valid_blocks(grid,blocks,px,py):
+    for(bx,by)in blocks:
+        x=px+bx
+        y=py+by
+        if x<0 or x>=GRID_COLS or y>=GRID_ROWS:return False
+        if y>=0 and grid[y][x]is not None:return False
+    return True
+
+def valid_position(grid,piece,dx=0,dy=0):
+    return valid_blocks(grid,piece.blocks,piece.x+dx,piece.y+dy)
+
+def lock_piece(grid,piece):
+    for(bx,by)in piece.blocks:
+        x=piece.x+bx
+        y=piece.y+by
+        if 0<=x<GRID_COLS and 0<=y<GRID_ROWS:
+            grid[y][x]=piece.color
+
+def clear_lines(grid):
+    full=[]
+    for y in range(GRID_ROWS):
+        if all(grid[y][x]is not None for x in range(GRID_COLS)):
+            full.append(y)
+    for y in full:
+        del grid[y]
+        grid.insert(0,[None for _ in range(GRID_COLS)])
+    return len(full)
+
+def new_piece():
+    return Piece(random.choice(WEIGHTED_SHAPES))
+
+def rotate_piece(grid,piece):
+    new_rot=(piece.rot+1)%4
+    new_blocks=ROTATIONS[piece.shape][new_rot]
+    if valid_blocks(grid,new_blocks,piece.x,piece.y):
+        piece.rot=new_rot
+        piece.blocks=[b for b in new_blocks]
+
+def draw_text(surf,text,size,color,x,y,center=False):
+    f=pygame.font.SysFont("Segoe UI",size,True)
+    r=f.render(text,True,color)
+    rect=r.get_rect()
+    if center:rect.center=(x,y)
+    else:rect.topleft=(x,y)
+    surf.blit(r,rect)
+
+def draw_grid(surf,grid):
+    pygame.draw.rect(surf,COLOR_PANEL,(PLAYFIELD_X-8,PLAYFIELD_Y-8,PLAYFIELD_WIDTH+16,PLAYFIELD_HEIGHT+16),border_radius=16)
+    for y in range(GRID_ROWS):
+        for x in range(GRID_COLS):
+            rect=pygame.Rect(PLAYFIELD_X+x*BLOCK_SIZE,PLAYFIELD_Y+y*BLOCK_SIZE,BLOCK_SIZE,BLOCK_SIZE)
+            if grid[y][x]is not None:
+                pygame.draw.rect(surf,grid[y][x],rect)
+                pygame.draw.rect(surf,COLOR_BG_DARK,rect,1)
+            else:
+                pygame.draw.rect(surf,COLOR_BG_DARK,rect)
+                pygame.draw.rect(surf,(30,34,48),rect,1)
+
+def draw_piece(surf,piece):
+    for(bx,by)in piece.blocks:
+        x=piece.x+bx
+        y=piece.y+by
+        if y<0:continue
+        rect=pygame.Rect(PLAYFIELD_X+x*BLOCK_SIZE,PLAYFIELD_Y+y*BLOCK_SIZE,BLOCK_SIZE,BLOCK_SIZE)
+        pygame.draw.rect(surf,piece.color,rect)
+        pygame.draw.rect(surf,COLOR_BG_DARK,rect,1)
+
+def draw_next_piece(surf,piece,x,y,w,h):
+    pygame.draw.rect(surf,COLOR_PANEL,(x,y,w,h),border_radius=16)
+    pygame.draw.rect(surf,COLOR_PANEL_DARK,(x,y,w,h),2,border_radius=16)
+    if not piece:return
+    mini=BLOCK_SIZE//1.5
+    xs=[b[0]for b in piece.blocks]
+    ys=[b[1]for b in piece.blocks]
+    minx,maxx=min(xs),max(xs)
+    miny,maxy=min(ys),max(ys)
+    pw=(maxx-minx+1)*mini
+    ph=(maxy-miny+1)*mini
+    sx=x+(w-pw)/2
+    sy=y+(h-ph)/2
+    for(bx,by)in piece.blocks:
+        rx=sx+(bx-minx)*mini
+        ry=sy+(by-miny)*mini
+        rect=pygame.Rect(rx,ry,mini,mini)
+        pygame.draw.rect(surf,piece.color,rect)
+        pygame.draw.rect(surf,COLOR_BG_DARK,rect,1)
+
+def draw_button(surf,rect,text,pressed=False,accent=False):
+    off=3
+    sh=(8,10,18)
+    hl=(40,46,60)
+    if pressed:
+        pygame.draw.rect(surf,sh,rect,border_radius=14)
+        inner=rect.inflate(-4,-4)
+        pygame.draw.rect(surf,COLOR_PANEL_DARK,inner,border_radius=12)
+    else:
+        pygame.draw.rect(surf,sh,rect.move(0,off),border_radius=14)
+        pygame.draw.rect(surf,hl,rect.move(0,-2),border_radius=14)
+        inner=rect.inflate(-6,-6)
+        pygame.draw.rect(surf,COLOR_PANEL,inner,border_radius=12)
+    col=COLOR_ACCENT if accent else COLOR_TEXT
+    f=pygame.font.SysFont("Segoe UI",40,True)
+    r=f.render(text,True,col)
+    surf.blit(r,r.get_rect(center=rect.center))
+
+def draw_exit(surf,rect,pressed=False):
+    col=(180,50,50)if pressed else COLOR_EXIT
+    pygame.draw.rect(surf,COLOR_BG_DARK,rect.inflate(8,8),border_radius=12)
+    pygame.draw.rect(surf,col,rect,border_radius=10)
+    pygame.draw.rect(surf,COLOR_PANEL_DARK,rect,2,border_radius=10)
+    f=pygame.font.SysFont("Segoe UI",24,True)
+    r=f.render("X",True,COLOR_TEXT)
+    surf.blit(r,r.get_rect(center=rect.center))
+
+def main():
+    pygame.init()
+    screen=pygame.display.set_mode((WINDOW_WIDTH,WINDOW_HEIGHT),pygame.FULLSCREEN)
+    pygame.display.set_caption("Tetris")
+    clock=pygame.time.Clock()
+
+    grid=create_grid()
+    current=new_piece()
+    nextp=new_piece()
+
+    fall_time=0
+    fall_speed=0.8
+    score=0
+    level=0
+    lines=0
+    game_over=False
+
+    sidebar_top=(WINDOW_HEIGHT-760)//2
+    sidebar_height=760
+
+    next_x=SIDEBAR_X+SIDEBAR_INNER_PADDING
+    next_y=sidebar_top+240
+    next_w=SIDEBAR_WIDTH-(SIDEBAR_INNER_PADDING*2)
+    next_h=160
+
+    btn=80
+    gap=14
+
+    cx=SIDEBAR_X+SIDEBAR_WIDTH//2
+    controls_top=next_y+next_h+70
+
+    # FULL-WIDTH ROTATE BUTTON
+    full_w = btn*3 + gap*2
+    rotate_rect = pygame.Rect(cx - full_w//2, controls_top, full_w, btn)
+
+    # MIDDLE ROW
+    left_x = cx - full_w//2
+    down_x = left_x + btn + gap
+    right_x = down_x + btn + gap
+
+    row_y = controls_top + btn + gap
+
+    left_rect  = pygame.Rect(left_x,  row_y, btn, btn)
+    down_rect  = pygame.Rect(down_x,  row_y, btn, btn)
+    right_rect = pygame.Rect(right_x, row_y, btn, btn)
+
+    # FULL-WIDTH DROP BUTTON
+    drop_rect = pygame.Rect(cx - full_w//2, row_y + btn + gap, full_w, btn)
+
+    exit_rect=pygame.Rect(WINDOW_WIDTH-90,20,70,40)
+
+    pr=pl=prg=pd=pp=pe=False
+
+    while True:
+        dt=clock.tick(FPS)/1000
+        fall_time+=dt
+
+        for e in pygame.event.get():
+            if e.type==pygame.QUIT:
+                pygame.quit();sys.exit()
+            if e.type==pygame.KEYDOWN:
+                if e.key==pygame.K_ESCAPE:
+                    pygame.quit();sys.exit()
+                if not game_over:
+                    if e.key==pygame.K_LEFT and valid_position(grid,current,-1,0):
+                        current.x-=1
+                    elif e.key==pygame.K_RIGHT and valid_position(grid,current,1,0):
+                        current.x+=1
+                    elif e.key==pygame.K_UP:
+                        rotate_piece(grid,current)
+                    elif e.key==pygame.K_DOWN and valid_position(grid,current,0,1):
+                        current.y+=1
+            if e.type==pygame.MOUSEBUTTONDOWN:
+                mx,my=e.pos
+                if exit_rect.collidepoint(mx,my):pe=True
+                if not game_over:
+                    if rotate_rect.collidepoint(mx,my):
+                        pr=True
+                        rotate_piece(grid,current)
+                    elif left_rect.collidepoint(mx,my):
+                        pl=True
+                        if valid_position(grid,current,-1,0):current.x-=1
+                    elif right_rect.collidepoint(mx,my):
+                        prg=True
+                        if valid_position(grid,current,1,0):current.x+=1
+                    elif down_rect.collidepoint(mx,my):
+                        pd=True
+                        if valid_position(grid,current,0,1):current.y+=1
+                    elif drop_rect.collidepoint(mx,my):
+                        pp=True
+                        while valid_position(grid,current,0,1):
+                            current.y+=1
+            if e.type==pygame.MOUSEBUTTONUP:
+                pr=pl=prg=pd=pp=False
+                if pe and exit_rect.collidepoint(e.pos):
+                    pygame.quit();sys.exit()
+                pe=False
+
+        if not game_over:
+            if fall_time>=fall_speed:
+                fall_time=0
+                if valid_position(grid,current,0,1):
+                    current.y+=1
+                else:
+                    lock_piece(grid,current)
+                    c=clear_lines(grid)
+                    if c>0:
+                        score+=LINE_SCORES[c]*(level+1)
+                        lines+=c
+                        nl=lines//10
+                        if nl>level:
+                            level=nl
+                            fall_speed=max(0.1,0.8-level*0.05)
+                    current=nextp
+                    nextp=new_piece()
+                    if not valid_position(grid,current):
+                        game_over=True
+
+        screen.fill(COLOR_BG)
+
+        pygame.draw.rect(screen,COLOR_PANEL_DARK,(0,0,WINDOW_WIDTH,70))
+        draw_text(screen,"Tetris",36,COLOR_TEXT,WINDOW_WIDTH//2,18)
+
+        draw_exit(screen,exit_rect,pe)
+
+        draw_grid(screen,grid)
+        if not game_over:draw_piece(screen,current)
+
+        pygame.draw.rect(screen,COLOR_PANEL,(SIDEBAR_X-20,sidebar_top,SIDEBAR_WIDTH,sidebar_height),border_radius=24)
+        pygame.draw.rect(screen,COLOR_PANEL_DARK,(SIDEBAR_X-20,sidebar_top,SIDEBAR_WIDTH,sidebar_height),2,border_radius=24)
+
+        tx=SIDEBAR_X+SIDEBAR_INNER_PADDING
+
+        draw_text(screen,f"Score: {score}",28,COLOR_TEXT,tx,sidebar_top+30)
+        draw_text(screen,f"Level: {level}",28,COLOR_TEXT,tx,sidebar_top+80)
+        draw_text(screen,f"Lines: {lines}",28,COLOR_TEXT,tx,sidebar_top+130)
+
+        draw_text(screen,"Next",26,COLOR_TEXT,tx,next_y-40)
+        draw_next_piece(screen,nextp,next_x,next_y,next_w,next_h)
+
+        draw_text(screen,"Controls",26,COLOR_TEXT,tx,controls_top-50)
+
+        draw_button(screen,rotate_rect,"ROTATE",pr,True)
+        draw_button(screen,left_rect,"←",pl)
+        draw_button(screen,down_rect,"↓",pd)
+        draw_button(screen,right_rect,"→",prg)
+        draw_button(screen,drop_rect,"DROP",pp,True)
+
+        if game_over:
+            ov=pygame.Surface((WINDOW_WIDTH,WINDOW_HEIGHT),pygame.SRCALPHA)
+            ov.fill((0,0,0,160))
+            screen.blit(ov,(0,0))
+            draw_text(screen,"GAME OVER",64,COLOR_TEXT,WINDOW_WIDTH//2,WINDOW_HEIGHT//2-40,True)
+            draw_text(screen,"Press ESC or tap X to exit",28,COLOR_TEXT,WINDOW_WIDTH//2,WINDOW_HEIGHT//2+20,True)
+
+        pygame.display.flip()
+
+if __name__=="__main__":
+    main()

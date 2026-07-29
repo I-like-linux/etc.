@@ -1,0 +1,186 @@
+import pygame,random,sys,math
+CELL_SIZE=10;TOOLBAR_H=120;SIM_FPS=30
+pygame.init();screen=pygame.display.set_mode((0,0),pygame.FULLSCREEN)
+WINDOW_W,WINDOW_H=screen.get_size();clock=pygame.time.Clock()
+GRID_W=WINDOW_W//CELL_SIZE;GRID_H=(WINDOW_H-TOOLBAR_H)//CELL_SIZE
+paused=False;tap_mode=False
+EMPTY=0;WATER=1;ACID=2;SAND=3;STONE=4;WOOD=5;FIRE=6;SMOKE=7;STEAM=8;GLASS=9;MGLASS=10
+WATER_SPAWNER=11;FIRE_SPAWNER=12;SAND_SPAWNER=13;ACID_SPAWNER=14;STEAM_SPAWNER=15;SMOKE_SPAWNER=16
+COLORS={EMPTY:(0,0,0),WATER:(64,164,223),ACID:(0,180,0),SAND:(194,178,128),STONE:(100,100,100),WOOD:(139,69,19),FIRE:(255,140,40),SMOKE:(80,80,80),STEAM:(180,180,255),GLASS:(200,230,255),MGLASS:(255,180,80),WATER_SPAWNER:(0,120,255),FIRE_SPAWNER:(255,80,0),SAND_SPAWNER:(210,190,140),ACID_SPAWNER:(0,140,0),STEAM_SPAWNER:(150,150,255),SMOKE_SPAWNER:(60,60,60)}
+PRIORITY={EMPTY:0,WATER:1,ACID:1.2,SAND:2,WOOD:2.5,FIRE:3,MGLASS:3.5,GLASS:3.9,STONE:4,SMOKE:0.5,STEAM:0.4,WATER_SPAWNER:10,FIRE_SPAWNER:10,SAND_SPAWNER:10,ACID_SPAWNER:10,STEAM_SPAWNER:10,SMOKE_SPAWNER:10}
+DENSITY={EMPTY:0,STEAM:0.05,SMOKE:0.1,FIRE:1.5,WATER:1,ACID:1.1,SAND:2,WOOD:2.5,MGLASS:2.8,GLASS:3.2,STONE:3,WATER_SPAWNER:10,FIRE_SPAWNER:10,SAND_SPAWNER:10,ACID_SPAWNER:10,STEAM_SPAWNER:10,SMOKE_SPAWNER:10}
+grid=[[EMPTY for _ in range(GRID_W)]for _ in range(GRID_H)]
+def inb(x,y):return 0<=x<GRID_W and 0<=y<GRID_H
+def swap(x1,y1,x2,y2):grid[y1][x1],grid[y2][x2]=grid[y2][x2],grid[y1][x1]
+def update_sand(x,y):
+    if random.random()<0.25:
+        for dy in range(-6,7):
+            for dx in range(-6,7):
+                nx,ny=x+dx,y+dy
+                if inb(nx,ny)and grid[ny][nx]==FIRE:grid[y][x]=MGLASS;return
+    if inb(x,y+1)and DENSITY[grid[y+1][x]]<DENSITY[SAND]:swap(x,y,x,y+1);return
+    for dx,dy in random.sample([(-1,1),(1,1)],2):
+        nx,ny=x+dx,y+dy
+        if inb(nx,ny)and DENSITY[grid[ny][nx]]<DENSITY[SAND]:swap(x,y,nx,ny);return
+def update_mglass(x,y):
+    if random.random()<0.01:grid[y][x]=GLASS;return
+    if inb(x,y+1)and grid[y+1][x]==EMPTY:swap(x,y,x,y+1);return
+    for dx,dy in random.sample([(-1,0),(1,0)],2):
+        nx,ny=x+dx,y+dy
+        if inb(nx,ny)and grid[ny][nx]==EMPTY and random.random()<0.3:swap(x,y,nx,ny);return
+def update_glass(x,y):pass
+def update_water(x,y):
+    if random.random()<0.5:return
+    if random.random()<0.25:
+        for dy in range(-8,9):
+            for dx in range(-8,9):
+                nx,ny=x+dx,y+dy
+                if inb(nx,ny)and grid[ny][nx]==FIRE:grid[y][x]=STEAM;return
+    if inb(x,y+1)and grid[y+1][x]in(EMPTY,SMOKE,STEAM):swap(x,y,x,y+1);return
+    for dx,dy in random.sample([(-1,0),(1,0)],2):
+        nx,ny=x+dx,y+dy
+        if inb(nx,ny)and grid[ny][nx]in(EMPTY,SMOKE,STEAM):swap(x,y,nx,ny);return
+def update_acid(x,y):
+    if random.random()<0.15:
+        for dx,dy in[(0,1),(0,-1),(1,0),(-1,0)]:
+            nx,ny=x+dx,y+dy
+            if inb(nx,ny)and grid[ny][nx]not in(EMPTY,WATER,GLASS,ACID):grid[ny][nx]=EMPTY;break
+    for dy in range(-4,5):
+        for dx in range(-4,5):
+            nx,ny=x+dx,y+dy
+            if inb(nx,ny)and grid[ny][nx]==FIRE:grid[y][x]=WATER;return
+    if random.random()<0.010:grid[y][x]=EMPTY;return
+    if inb(x,y+1)and grid[y+1][x]in(EMPTY,SMOKE,STEAM):swap(x,y,x,y+1);return
+    for dx,dy in random.sample([(-1,0),(1,0)],2):
+        nx,ny=x+dx,y+dy
+        if inb(nx,ny)and grid[ny][nx]in(EMPTY,SMOKE,STEAM):swap(x,y,nx,ny);return
+def update_fire(x,y):
+    if y==GRID_H-1:grid[y][x]=SMOKE;return
+    fuel=False
+    for dx,dy in[(0,1),(0,-1),(1,0),(-1,0)]:
+        nx,ny=x+dx,y+dy
+        if inb(nx,ny)and grid[ny][nx]==WOOD:fuel=True
+    if not fuel:
+        if random.random()<0.075:grid[y][x]=SMOKE
+        return
+    if random.random()<0.2:
+        for dx,dy in[(0,1),(0,-1),(1,0),(-1,0)]:
+            nx,ny=x+dx,y+dy
+            if inb(nx,ny)and grid[ny][nx]==WOOD:grid[ny][nx]=FIRE
+    for dx,dy in random.sample([(-1,0),(1,0)],2):
+        nx,ny=x+dx,y+dy
+        if inb(nx,ny)and DENSITY[grid[ny][nx]]<DENSITY[FIRE]and random.random()<0.25:swap(x,y,nx,ny);return
+def update_smoke(x,y):
+    if inb(x,y-1)and grid[y-1][x]==EMPTY:swap(x,y,x,y-1);return
+    for dx,dy in random.sample([(-1,0),(1,0)],2):
+        nx,ny=x+dx,y+dy
+        if inb(nx,ny)and grid[ny][nx]==EMPTY:swap(x,y,nx,ny);return
+    if random.random()<0.003:grid[y][x]=EMPTY
+def update_steam(x,y):
+    if inb(x,y-1)and grid[y-1][x]==EMPTY:swap(x,y,x,y-1);return
+    for dx,dy in random.sample([(-1,0),(1,0)],2):
+        nx,ny=x+dx,y+dy
+        if inb(nx,ny)and grid[ny][nx]==EMPTY:swap(x,y,nx,ny);return
+    if random.random()<0.01:grid[y][x]=WATER
+def update_water_spawner(x,y):
+    if inb(x,y+1)and grid[y+1][x]==EMPTY:grid[y+1][x]=WATER
+def update_fire_spawner(x,y):
+    if inb(x,y-1)and grid[y-1][x]==EMPTY:grid[y-1][x]=FIRE
+def update_sand_spawner(x,y):
+    if inb(x,y+1)and grid[y+1][x]==EMPTY:grid[y+1][x]=SAND
+def update_acid_spawner(x,y):
+    if inb(x,y+1)and grid[y+1][x]==EMPTY:grid[y+1][x]=ACID
+def update_steam_spawner(x,y):
+    if inb(x,y-1)and grid[y-1][x]==EMPTY:grid[y-1][x]=STEAM
+def update_smoke_spawner(x,y):
+    if inb(x,y-1)and grid[y-1][x]==EMPTY:grid[y-1][x]=SMOKE
+UPDATE_FALL={SAND:update_sand,WATER:update_water,ACID:update_acid,STONE:lambda x,y:None,WOOD:lambda x,y:None,FIRE:update_fire,MGLASS:update_mglass,GLASS:update_glass,WATER_SPAWNER:update_water_spawner,FIRE_SPAWNER:update_fire_spawner,SAND_SPAWNER:update_sand_spawner,ACID_SPAWNER:update_acid_spawner,STEAM_SPAWNER:update_steam_spawner,SMOKE_SPAWNER:update_smoke_spawner}
+current_material=SAND;brush_size=3;last_pos=None
+def place(x,y):
+    if not inb(x,y):return
+    if tap_mode:
+        if current_material==WATER:grid[y][x]=WATER_SPAWNER;return
+        if current_material==FIRE:grid[y][x]=FIRE_SPAWNER;return
+        if current_material==SAND:grid[y][x]=SAND_SPAWNER;return
+        if current_material==ACID:grid[y][x]=ACID_SPAWNER;return
+        if current_material==STEAM:grid[y][x]=STEAM_SPAWNER;return
+        if current_material==SMOKE:grid[y][x]=SMOKE_SPAWNER;return
+    if current_material==EMPTY:grid[y][x]=EMPTY;return
+    if PRIORITY[current_material]>=PRIORITY[grid[y][x]]:grid[y][x]=current_material
+def brush(mx,my):
+    gx,gy=mx//CELL_SIZE,my//CELL_SIZE
+    for dy in range(-brush_size,brush_size+1):
+        for dx in range(-brush_size,brush_size+1):
+            if dx*dx+dy*dy<=brush_size*brush_size:place(gx+dx,gy+dy)
+def linebrush(p1,p2):
+    x1,y1=p1;x2,y2=p2;d=max(1,int(math.hypot(x2-x1,y2-y1)))
+    for i in range(d+1):
+        t=i/d;brush(int(x1+(x2-x1)*t),int(y1+(y2-y1)*t))
+button_w=WINDOW_W//13
+btn=lambda i:pygame.Rect(button_w*i,WINDOW_H-TOOLBAR_H,button_w,TOOLBAR_H)
+sand_b=btn(0);water_b=btn(1);acid_b=btn(2);stone_b=btn(3);wood_b=btn(4);fire_b=btn(5);smoke_b=btn(6);steam_b=btn(7);glass_b=btn(8);erase_b=btn(9);clear_b=btn(10);pause_b=btn(11);tap_b=btn(12)
+font=pygame.font.SysFont("Segoe UI",32,True)
+exit_rect=pygame.Rect(WINDOW_W-80,20,60,40)
+def draw_btn(rect,label,active):
+    pygame.draw.rect(screen,(140,140,140)if active else(80,80,80),rect,border_radius=12)
+    pygame.draw.rect(screen,(30,30,30),rect,3,border_radius=12)
+    t=font.render(label,True,(255,255,255));screen.blit(t,t.get_rect(center=rect.center))
+sim_t=0
+while True:
+    dt=clock.tick(40)/1000;sim_t+=dt
+    for e in pygame.event.get():
+        if e.type==pygame.QUIT:pygame.quit();sys.exit()
+        if e.type==pygame.MOUSEBUTTONDOWN:
+            mx,my=e.pos
+            if exit_rect.collidepoint(mx,my):pygame.quit();sys.exit()
+            if sand_b.collidepoint(mx,my):current_material=SAND
+            elif water_b.collidepoint(mx,my):current_material=WATER
+            elif acid_b.collidepoint(mx,my):current_material=ACID
+            elif stone_b.collidepoint(mx,my):current_material=STONE
+            elif wood_b.collidepoint(mx,my):current_material=WOOD
+            elif fire_b.collidepoint(mx,my):current_material=FIRE
+            elif smoke_b.collidepoint(mx,my):current_material=SMOKE
+            elif steam_b.collidepoint(mx,my):current_material=STEAM
+            elif glass_b.collidepoint(mx,my):current_material=GLASS
+            elif erase_b.collidepoint(mx,my):current_material=EMPTY
+            elif clear_b.collidepoint(mx,my):grid=[[EMPTY for _ in range(GRID_W)]for _ in range(GRID_H)]
+            elif pause_b.collidepoint(mx,my):paused=not paused
+            elif tap_b.collidepoint(mx,my):tap_mode=not tap_mode
+    if pygame.mouse.get_pressed()[0]:
+        mx,my=pygame.mouse.get_pos()
+        if my<WINDOW_H-TOOLBAR_H:
+            if last_pos:linebrush(last_pos,(mx,my))
+            last_pos=(mx,my)
+    else:last_pos=None
+    if not paused and sim_t>=1/SIM_FPS:
+        sim_t=0
+        for y in range(GRID_H-1,-1,-1):
+            xs=list(range(GRID_W));random.shuffle(xs)
+            for x in xs:
+                m=grid[y][x]
+                if m in UPDATE_FALL:UPDATE_FALL[m](x,y)
+        for y in range(GRID_H):
+            xs=list(range(GRID_W));random.shuffle(xs)
+            for x in xs:
+                if grid[y][x]==SMOKE:update_smoke(x,y)
+                elif grid[y][x]==STEAM:update_steam(x,y)
+    screen.fill((0,0,0))
+    for y in range(GRID_H):
+        for x in range(GRID_W):
+            pygame.draw.rect(screen,COLORS[grid[y][x]],(x*CELL_SIZE,y*CELL_SIZE,CELL_SIZE,CELL_SIZE))
+    draw_btn(sand_b,"SAND",current_material==SAND)
+    draw_btn(water_b,"WATER",current_material==WATER)
+    draw_btn(acid_b,"ACID",current_material==ACID)
+    draw_btn(stone_b,"STONE",current_material==STONE)
+    draw_btn(wood_b,"WOOD",current_material==WOOD)
+    draw_btn(fire_b,"FIRE",current_material==FIRE)
+    draw_btn(smoke_b,"SMOKE",current_material==SMOKE)
+    draw_btn(steam_b,"STEAM",current_material==STEAM)
+    draw_btn(glass_b,"GLASS",current_material==GLASS)
+    draw_btn(erase_b,"ERASE",current_material==EMPTY)
+    draw_btn(clear_b,"CLEAR",False)
+    draw_btn(pause_b,"PAUSE"if not paused else"PLAY",False)
+    draw_btn(tap_b,"TAP"if not tap_mode else"TAP*",tap_mode)
+    pygame.draw.rect(screen,(200,50,50),exit_rect,border_radius=12)
+    t=font.render("X",True,(255,255,255));screen.blit(t,t.get_rect(center=exit_rect.center))
+    pygame.display.flip()
